@@ -1,0 +1,264 @@
+// Prisma Schema for Codexa Developer Productivity Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// Authentication & User Models (Better Auth)
+// ==========================================
+
+model User {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  role          String?   @default("user") // "user" | "admin"
+  bio           String?
+
+  // Platform Usernames (synced)
+  githubUsername     String?
+  leetcodeUsername   String?
+  codeforcesUsername String?
+  codechefUsername   String?
+  atcoderUsername    String?
+  geeksforgeeksUsername String?
+  bytecodeUsername   String?
+
+  // Relations
+  sessions           Session[]
+  accounts           Account[]
+  codingProfile      CodingProfile?
+  userProblems       UserProblemProgress[]
+  reminders          UserContestReminder[]
+  resumes            Resume[]
+  activityLogs       ActivityLog[]
+  customSheets       CodingSheet[]
+
+  // Friendships
+  sentFriendships     Friendship[] @relation("SentFriendships")
+  receivedFriendships Friendship[] @relation("ReceivedFriendships")
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
+
+// ==========================================
+// Coding Profiles Statistics (Cached values)
+// ==========================================
+
+model CodingProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // LeetCode Stats
+  leetcodeSolved     Int      @default(0)
+  leetcodeEasy       Int      @default(0)
+  leetcodeMedium     Int      @default(0)
+  leetcodeHard       Int      @default(0)
+  leetcodeRating     Float?
+  leetcodeGlobalRank Int?
+  leetcodeStreak     Int      @default(0)
+  leetcodeLastSynced DateTime?
+
+  // Codeforces Stats
+  codeforcesRating   Int?
+  codeforcesMaxRating Int?
+  codeforcesRank     String?
+  codeforcesSolved   Int      @default(0)
+  codeforcesLastSynced DateTime?
+
+  // CodeChef Stats
+  codechefRating     Int?
+  codechefStars      String?
+  codechefGlobalRank Int?
+  codechefLastSynced DateTime?
+
+  // AtCoder Stats
+  atcoderRating      Int?
+  atcoderRank        Int?
+  atcoderLastSynced  DateTime?
+
+  // GeeksforGeeks Stats
+  geeksforgeeksSolved     Int      @default(0)
+  geeksforgeeksLastSynced DateTime?
+
+  // ByteCode Stats
+  bytecodeSolved     Int      @default(0)
+  bytecodeLastSynced DateTime?
+
+  // GitHub Stats
+  githubRepoCount    Int      @default(0)
+  githubFollowers    Int      @default(0)
+  githubStars        Int      @default(0)
+  githubCommits      Int      @default(0)
+  githubPRs          Int      @default(0)
+  githubIssues       Int      @default(0)
+  githubLastSynced   DateTime?
+
+  updatedAt          DateTime @updatedAt
+
+  @@map("coding_profile")
+}
+
+// ==========================================
+// Coding Sheets & Problems Tracker
+// ==========================================
+
+model CodingSheet {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  isCustom    Boolean   @default(false)
+  userId      String?   // Null for global sheets (Blind 75, Striver, etc.)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problems    Problem[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("coding_sheet")
+}
+
+model Problem {
+  id           String                @id @default(uuid())
+  title        String
+  url          String
+  difficulty   String                // "EASY" | "MEDIUM" | "HARD"
+  platform     String                // "LEETCODE" | "CODEFORCES" | "CODECHEF" | "ATCODER" | "GITHUB" | "CUSTOM"
+  videoUrl     String?
+  articleUrl   String?
+  sheetId      String
+  sheet        CodingSheet           @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  tags         String[]              // Topic or company tags (e.g. ["Arrays", "Google"])
+  userProgress UserProblemProgress[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@map("problem")
+}
+
+model UserProblemProgress {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId        String
+  problem          Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  isSolved         Boolean   @default(false)
+  notes            String?   @db.Text
+  isBookmarked     Boolean   @default(false)
+  revisionCount    Int       @default(0)
+  personalRating   Int?      // Custom rating (e.g. 1 to 5 stars difficulty)
+  nextRevisionDate DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([userId, problemId])
+  @@map("user_problem_progress")
+}
+
+// ==========================================
+// Activity & Reminders & Resume & Friends
+// ==========================================
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // "PROBLEM_SOLVED" | "SYNC_COMPLETED" | "RESUME_CREATED" | "CONTEST_REMINDER"
+  description String
+  createdAt   DateTime @default(now())
+
+  @@map("activity_log")
+}
+
+model UserContestReminder {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contestId    String
+  contestName  String
+  platform     String   // "LEETCODE" | "CODEFORCES" | "CODECHEF" | "ATCODER"
+  startTime    DateTime
+  reminderSent Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, contestId])
+  @@map("user_contest_reminder")
+}
+
+model Resume {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @default("My Resume")
+  content   Json     // Stores template settings, work experience, projects, skills, education
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("resume")
+}
+
+model Friendship {
+  id         String   @id @default(uuid())
+  senderId   String
+  sender     User     @relation("SentFriendships", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User     @relation("ReceivedFriendships", fields: [receiverId], references: [id], onDelete: Cascade)
+  status     String   // "PENDING" | "ACCEPTED" | "DECLINED"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([senderId, receiverId])
+  @@map("friendship")
+}
